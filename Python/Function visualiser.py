@@ -13,14 +13,14 @@ def Soft_Decay(duration, tau=0.5, Fs=44800):
     n = int(duration * Fs)
     out = np.zeros(n)
     for i in range(n):
-        out[i] = (1 - (i+1)/n)**(tau)
+        out[n - (i+1)] = (1 - (i+1)/n)**(tau)
     return out
 
-duration = 0.5
+duration = 1.0
 
 
 ### Exponential Decay plot ###
-
+'''
 plt.figure(1)
 plt.title("Exponential Decay")
 ### for tau in [0.1, 5]:
@@ -32,17 +32,18 @@ soft_tau = 0.1
 plt.plot(Soft_Decay(duration, tau=soft_tau), label=fr'Exp $\tau={soft_tau}$s', linestyle ='--')
 plt.legend(loc="lower left")
 plt.grid()
+'''
 
 
 ### Soft Decay plot ###
-'''
+
 plt.figure(2)
 plt.title("Soft Decay")
 for tau in [0.1, 0.25, 0.5, 1, 2, 5]:
     plt.plot(Soft_Decay(duration, tau=tau), label=fr'$\tau={tau}$s')
 plt.legend(loc="lower left")
 plt.grid()
-'''
+
 
 
 
