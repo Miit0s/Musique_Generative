@@ -2,20 +2,32 @@ extends Node2D
 
 @onready var Instruments = $Instruments
 const MyData = preload("res://Note.gd")
-const Fs = 48000								# (Hz)
+
+@export_group("Fréquence d'échantillonnage")
+@export var Fs : int = 48000								# (Hz)
 
 
 ##### Valeurs à changer pour modifier le rythme #####
-const bpm = 80  								# (battements par minute)
-const measure_length = 4						# (battements par mesure)
-const subs_div = 6								# (subdivisions par battement)
+@export_group("Metrique et Tempo")
+@export var bpm : int = 80  								# (battements par minute)
+@export var measure_length : int = 4						# (battements par mesure)
+@export var subs_div: int = 6								# (subdivisions par battement)
 
-const total_subs = measure_length * subs_div	# (subdivisions totales par mesure)
+var total_subs = measure_length * subs_div	# (subdivisions totales par mesure)
 
-const spb = 60.0 / bpm							# (secondes par battement)
-const s_per_sub = spb / subs_div				# (secondes par subdivision)
+var spb = 60.0 / bpm							# (secondes par battement)
+var s_per_sub = spb / subs_div				# (secondes par subdivision)
 
-var fondamental = 110.0
+@export_group("Fréquence fondamentale")
+@export var fondamental : float = 110.0
+
+@export_group("Volumes des instruments")
+@export var vol_drum_kick : float = 0.8
+@export var vol_drum_snare : float = 0.4
+@export var vol_drum_hihat : float = 0.3
+@export var vol_lead : float = 0.3
+@export var vol_bass : float = 0.3
+
 var semitone_ratio = pow(2.0, 1.0 / 12.0)
 
 var gamme = [0, 1, 4, 5, 7, 8, 10]	# gamme en demi-tons par rapport à la fondamentale (0 = Fondamentale = La)
@@ -35,13 +47,13 @@ var message = [null, null, null, null, null]
 
 func _ready():
 
-	var Drum_Kick = Note.new("Drum", 0.4, "Kick", 440.0, 0.8)
-	var Drum_Snare = Note.new("Drum", 0.15, "Snare", 440.0, 0.4)
-	var Drum_HiHat = Note.new("Drum", 0.4, "HiHat", 440.0, 0.3)
+	var Drum_Kick = Note.new("Drum", 0.4, "Kick", 440.0, vol_drum_kick)
+	var Drum_Snare = Note.new("Drum", 0.15, "Snare", 440.0, vol_drum_snare)
+	var Drum_HiHat = Note.new("Drum", 0.4, "HiHat", 440.0, vol_drum_hihat)
 
-	var Lead_Note = Note.new("Synth", s_per_sub, "Square", fondamental * pow(2.0, note/12.0), randf()*0.3)
+	var Lead_Note = Note.new("Synth", s_per_sub, "Square", fondamental * pow(2.0, note/12.0), randf()*vol_lead)
 
-	var Bass_Note = Note.new("Bass", s_per_sub*(subs_div-1), "Bass", fondamental * pow(2.0, note/12.0)/2, 0.3)
+	var Bass_Note = Note.new("Bass", s_per_sub*(subs_div-1), "Bass", fondamental * pow(2.0, note/12.0)/2, vol_bass)
 	var Bass_Groove = false
 
 	print(markov_weighted)	
@@ -51,8 +63,8 @@ func _ready():
 		for truc in markov_weighted[bidule]:
 			print("   note ", truc, " with weight ", markov_weighted[bidule][truc])
 
-		Bass_Note.Volume = 0.3
-
+	await get_tree().create_timer(1.0).timeout
+	
 	while true:		
 		print("###### Nouvelle mesure ",measure_length, " X ",subs_div ," ######")		
 		for j in range(total_subs):	
@@ -60,6 +72,10 @@ func _ready():
 			# note = gamme.pick_random() + 12 * int(randi_range(0, 1))
 			
 			message = [null, null, null, null, null]
+			Drum_Kick.Volume = vol_drum_kick
+			Drum_Snare.Volume = vol_drum_snare
+			Drum_HiHat.Volume = vol_drum_hihat
+			Bass_Note.Volume = vol_bass
 			note = next_note_weighted(note)
 
 
@@ -90,7 +106,7 @@ func _ready():
 			
 
 			Lead_Note.Frequency = fondamental * pow(2.0, note/12.0)
-			Lead_Note.Volume = randf()*0.3
+			Lead_Note.Volume = randf()*vol_lead
 			message[4] = Lead_Note
 
 			Instruments.receive_message(message)
