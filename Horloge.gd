@@ -5,7 +5,7 @@ extends Node
 # Mais chaque instrument peut avoir sa propre façon de compter les mesures pour jouer avec le décalage
 
 ## Node Instruments qui joue les notes reçues
-@onready var Instrument = $Instrument
+@onready var instrument: Instruments = $Instrument
 
 @export_group("Fréquence d'échantillonnage")
 ## Fréquence d'échantillonage (48000 Hz par défaut)
@@ -51,6 +51,8 @@ var prev_note = 0
 var iteration : int = 0
 ## Variable qui va accumuler le delta pour s'assurer qu'il n'y est pas de décalage même avec un spike de lag
 var time_acumulator: float = 0
+# Max de note à jouer en une frame si lag
+const MAX_LOOPS = 10
 
 func _ready():
 	# Normalize weights so each row sums to 1.0
@@ -73,18 +75,17 @@ func _process(delta: float) -> void:
 	time_acumulator += delta
 	
 	var loops = 0
-	var max_loops = 10 # Max de note à jouer en une frame si lag
 	
 	while time_acumulator >= s_per_sub:
 		time_acumulator -= s_per_sub
 		
 		prev_note = next_note_weighted(prev_note)
 		
-		Instrument.receive_message([iteration, prev_note])
+		instrument.receive_message([iteration, prev_note])
 		iteration = iteration + 1
 		
 		loops += 1
-		if loops >= max_loops:
+		if loops >= MAX_LOOPS:
 			time_acumulator = fmod(time_acumulator, s_per_sub) #Flush le retard, mais garde l'alignement
 			break
 
@@ -102,4 +103,4 @@ func next_note_weighted(previous_note: int) -> int:
 		acc += choices[note]
 		if r <= acc:
 			return note
-	return choices.keys().back()  # fallback
+	return choices.keys().back()  # Fallback

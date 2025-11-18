@@ -1,63 +1,95 @@
 extends Node
-const MyData = preload("res://Scripts/Note.gd")						## Preload de la classe Note pour créer des notes musicales
+class_name Instruments
+
+## Preload de la classe Note pour créer des notes musicales
+const MyData = preload("res://Scripts/Note.gd")
 
 @export_group("Lien aux nodes")
 
-@export var Clock: Node = get_parent()				## (Node) Clock Node that send the message every sub_times, and give value like Fs, tempo, etc...
-@export var AudioPlayer: AudioStreamPlayer			## (Node AudioStreamPlayer) Node qui joue le son généré
+## (Node) Clock Node that send the message every sub_times, and give value like Fs, tempo, etc...
+@export var Clock: Node = get_parent()
+## (Node AudioStreamPlayer) Node qui joue le son généré
+@export var AudioPlayer: AudioStreamPlayer
 
 @export_group("Buffer")
-@export var Buffer_duration: float = 1.0			## Durée du buffer (secondes)
+## Durée du buffer (secondes)
+@export var Buffer_duration: float = 1.0
 
 @export_group("Metrique (-1 is Clock value)")
-@export var measure_length : int = -1				## Temps par mesure (-1 is Clock value)
-@export var subs_div : int = -1						## Subdivisions par temps (-1 is Clock value)
+## Temps par mesure (-1 is Clock value)
+@export var measure_length : int = -1
+## Subdivisions par temps (-1 is Clock value)
+@export var subs_div : int = -1
 
 @export_group("Tuning (-1 is Clock value)")
-@export var fondamental : float = -1.0				## Fréquence fondamentale (-1 is Clock value)
+## Fréquence fondamentale (-1 is Clock value)
+@export var fondamental : float = -1.0
 
 @export_group("Volumes des instruments")
-@export var vol_drum_kick : float = 0.8			## Volume du kick (entre 0.0 et 1.0)
-@export var vol_drum_snare : float = 0.4		## Volume de la snare (entre 0.0 et 1.0)
-@export var vol_drum_hihat : float = 0.3		## Volume du hihat (entre 0.0 et 1.0)
-@export var vol_lead : float = 0.3				## Volume du lead (entre 0.0 et 1.0)
-@export var vol_bass : float = 0.3				## Volume de la basse (entre 0.0 et 1.0)
+## Volume du kick (entre 0.0 et 1.0)
+@export var vol_drum_kick : float = 0.8
+## Volume de la snare (entre 0.0 et 1.0)
+@export var vol_drum_snare : float = 0.4
+## Volume du hihat (entre 0.0 et 1.0)
+@export var vol_drum_hihat : float = 0.3
+## Volume du lead (entre 0.0 et 1.0)
+@export var vol_lead : float = 0.3
+## Volume de la basse (entre 0.0 et 1.0)
+@export var vol_bass : float = 0.3
 
 @export_group("Visualisation and Debug")
-@export var metric_plot: bool = false			## If true, this will plot every subdiv and note
+## If true, this will plot every subdiv and note
+@export var metric_plot: bool = false
 
-@onready var Fs : float = Clock.Fs								## Fréquence d'échantillonage du parent (48000 Hz par défaut)
-@onready var Buffer_size : int = round(Fs * Buffer_duration)	## Taille du buffer (1 seconde d'audio)
-@onready var sub_div_pm: float = Clock.sub_div_pm				## sub div par minute du parent
-@onready var s_per_sub : float = 60.0 / sub_div_pm				## secondes par subdivision
-@onready var gamme : Array = Clock.gamme						## gamme en demi-tons par rapport à la fondamentale (0 = Fondamentale = La) du parent
+## Fréquence d'échantillonage du parent (48000 Hz par défaut)
+@onready var Fs : float = Clock.Fs
+## Taille du buffer (1 seconde d'audio)
+@onready var Buffer_size : int = round(Fs * Buffer_duration)
+## Sub div par minute du parent
+@onready var sub_div_pm: float = Clock.sub_div_pm
+## Secondes par subdivision
+@onready var s_per_sub : float = 60.0 / sub_div_pm
+## Gamme en demi-tons par rapport à la fondamentale (0 = Fondamentale = La) du parent
+@onready var gamme : Array = Clock.gamme
 
+## Ratio de fréquence entre deux demi-tons consécutifs
+var semitone_ratio : float = pow(2.0, 1.0 / 12.0)
+## Note choisie dans gamme au hasard
+var note: float = 0
 
-var semitone_ratio : float = pow(2.0, 1.0 / 12.0)				## ratio de fréquence entre deux demi-tons consécutifs
+## Buffer circulaire contenant les échantillons audio générés
+var Buffer: Array = []
+## Handle de playback pour envoyer les échantillons audio
+var playback: AudioStreamPlayback
 
-var note: float = 0												## note choisie dans gamme au hasard
+## Subdivisions totales par mesure
+var total_subs : int
+## Secondes par temps
+var spb : float
 
+## [Drum_Kick, Drum_Snare, Drum_HiHat, Bass_Note, Lead_Note] Array contenant le message envoyé aux instruments
+var Sound_To_Render: Array = [null, null, null, null, null]
 
-var Buffer: Array = []											## (array) Buffer circulaire contenant les échantillons audio générés
-var playback: AudioStreamPlayback								## (AudioStreamPlayback) Handle de playback pour envoyer les échantillons audio
+## Booléen pour déterminer si la basse joue sur le temps ou pas
+var Bass_Groove = false
 
-var total_subs : int											## subdivisions totales par mesure
-var spb : float													## secondes par temps
+## Note de kick
+var Drum_Kick: Note
+## Note de snare
+var Drum_Snare: Note
+## Note de hihat
+var Drum_HiHat: Note
+## Note de lead
+var Lead_Note: Note
+## Note de basse
+var Bass_Note: Note
 
-var Sound_To_Render: Array = [null, null, null, null, null]		## [Drum_Kick, Drum_Snare, Drum_HiHat, Bass_Note, Lead_Note] Array contenant le message envoyé aux instruments
-
-var Bass_Groove = false								## Booléen pour déterminer si la basse joue sur le temps ou pas
-
-var Drum_Kick: Note 								## Note de kick
-var Drum_Snare: Note								## Note de snare
-var Drum_HiHat: Note								## Note de hihat
-var Lead_Note: Note									## Note de lead
-var Bass_Note: Note									## Note de basse
-
-var j: int = 0										## Indice de la subdivision actuelle normalisé sur la metrique de l'instrument
+## Indice de la subdivision actuelle normalisé sur la metrique de l'instrument
+var j: int = 0
 
 func _ready():
-	assert(!AudioPlayer == null, "No AudioPlayer defined for this Instrument")		## Stop si l'audio player n'a pas été définie
+	# Stop si l'audio player n'a pas été définie
+	assert(!AudioPlayer == null, "No AudioPlayer defined for this Instrument")
 	
 	# Applique la valeur de la clock si param = -1
 	if measure_length == -1:
@@ -66,26 +98,26 @@ func _ready():
 		subs_div = Clock.subs_div	
 	if fondamental == -1:
 		fondamental = Clock.fondamental
-		
-	total_subs = measure_length * subs_div			# update total_subs value							
+	
+	# Update total_subs value
+	total_subs = measure_length * subs_div
 	
 	
-	Drum_Kick = Note.new("Drum", 0.4, "Kick", 440.0, vol_drum_kick)													## Note de kick
-	Drum_Snare = Note.new("Drum", 0.15, "Snare", 440.0, vol_drum_snare)												## Note de snare
-	Drum_HiHat = Note.new("Drum", 0.4, "HiHat", 440.0, vol_drum_hihat)												## Note de hihat
-	Lead_Note = Note.new("Synth", s_per_sub, "Square", fondamental * pow(2.0, note/12.0), randf()*vol_lead)			## Note de lead
-	Bass_Note = Note.new("Bass", s_per_sub*(subs_div-1), "Bass", fondamental * pow(2.0, note/12.0)/2, vol_bass)		## Note de basse
+	Drum_Kick = Note.new("Drum", 0.4, "Kick", 440.0, vol_drum_kick)                                                 ## Note de kick
+	Drum_Snare = Note.new("Drum", 0.15, "Snare", 440.0, vol_drum_snare)                                             ## Note de snare
+	Drum_HiHat = Note.new("Drum", 0.4, "HiHat", 440.0, vol_drum_hihat)                                              ## Note de hihat
+	Lead_Note = Note.new("Synth", s_per_sub, "Square", fondamental * pow(2.0, note/12.0), randf()*vol_lead)         ## Note de lead
+	Bass_Note = Note.new("Bass", s_per_sub*(subs_div-1), "Bass", fondamental * pow(2.0, note/12.0)/2, vol_bass)     ## Note de basse
 	
 	# Start playing the AudioPlayer, and prepare the Buffer Array
 	AudioPlayer.play()
-	playback = AudioPlayer.get_stream_playback()			
+	playback = AudioPlayer.get_stream_playback()
 	Buffer.resize(Buffer_size)
 	Buffer.fill(0.0)
-	
-	
+
+
 ## Quand le node reçoit un message (array de Notes), il génère le son correspondant dans le buffer et envoie certain echantillons du buffer au player.
-func receive_message(message):	
-	
+func receive_message(message):
 	Sound_To_Render = [null, null, null, null, null]
 	Drum_Kick.Volume = vol_drum_kick
 	Drum_Snare.Volume = vol_drum_snare
@@ -103,29 +135,27 @@ func receive_message(message):
 		else : 
 			print("    ", j+1,"/",total_subs, " | ", note, " semi-tone")
 	
-
 		
 	if (int(j / subs_div)) % 2 == 0 and j % subs_div == 0 :	
 		Sound_To_Render[0] = Drum_Kick
-
 		Bass_Groove = randi_range(0, 1)
+		
 		if !Bass_Groove :
 			Bass_Note.Frequency = fondamental * pow(2.0, note/12.0)/2
 			Sound_To_Render[3] = Bass_Note 
-
+			
 	elif (j / subs_div) % 2 == 1 and j % subs_div == 0 :
 		Sound_To_Render[1] = Drum_Snare
 
 		if Bass_Groove :
 			Bass_Note.Frequency = fondamental * pow(2.0, note/12.0)/2
 			Sound_To_Render[3] = Bass_Note
-
+			
 		Bass_Groove = round(randf_range(0, 3)/3)
-
+		
 	elif j% 1 == 0:
 		Sound_To_Render[2] = Drum_HiHat
 	
-
 	Lead_Note.Frequency = fondamental * pow(2.0, note/12.0)
 	Lead_Note.Volume = randf()*vol_lead
 	Sound_To_Render[4] = Lead_Note
@@ -134,29 +164,20 @@ func receive_message(message):
 		if m != null:
 			if m.Soundtype == "HiHat":
 				Play_HiHat(m.Duration, m.Volume)
-
 			elif m.Soundtype == "Kick":
 				Play_Kick(m.Duration, m.Volume)
-			
 			elif m.Soundtype == "Snare":
 				Play_Snare(m.Duration, m.Volume)
-			
 			elif m.Soundtype == "Square":
 				Play_SquareWave(m.Duration, m.Frequency, m.Volume)
-
 			elif m.Soundtype == "Bass":
 				Play_Bass(m.Duration, m.Frequency, m.Volume)
 			
 			
 	for i in range(Fs*s_per_sub+1):
 		playback.push_frame(Vector2.ONE * Buffer[i])
+	
 	Buffer = rotate_array(Buffer, Fs*s_per_sub)
-
-
-
-
-
-
 
 ## Rotate (shift) to the left an array by a given integer offset, filling out-of-bounds indices with 0.0.
 ## [br]
@@ -376,8 +397,3 @@ func Play_Bass(duration: float, frequency: float, volume: float = 1.0) -> void:
 		for i in range(out.size()):
 			out[i] *= decay[i] * volume * out_bis[i]
 			Buffer[i] += out[i]
-
-
-	
-
-		
