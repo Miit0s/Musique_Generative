@@ -48,7 +48,7 @@ var semitone_ratio : float = pow(2.0, 1.0 / 12.0)
 var note: float = 0
 
 ## Buffer circulaire contenant les échantillons audio générés
-var buffer: Array = []
+var buffer: PackedFloat32Array = PackedFloat32Array()
 ## Handle de playback pour envoyer les échantillons audio
 var playback: AudioStreamPlayback
 
@@ -61,7 +61,7 @@ var spb : float
 var sound_to_render: Array[Note] = [null, null, null, null, null]
 
 ## Booléen pour déterminer si la basse joue sur le temps ou pas
-var bass_groove = false
+var bass_groove: bool = false
 
 ## Note de kick
 @export var drum_kick: Note
@@ -76,6 +76,19 @@ var bass_note: Note
 
 ## Indice de la subdivision actuelle normalisé sur la metrique de l'instrument
 var j: int = 0
+
+## Stoque d'un kick précalculer à ré-utiliser
+var baked_kick: PackedFloat32Array
+## Stoque d'un Snare précalculer à ré-utiliser
+var baked_snare: PackedFloat32Array
+## Stoque d'un Hithat précalculer à ré-utiliser
+var baked_hihat: PackedFloat32Array
+
+enum WaveTypeEnum {
+	SINE,
+	SQUARE,
+	SAWTOOTH
+}
 
 func _ready():
 	# Stop si l'audio player n'a pas été définie
@@ -95,12 +108,46 @@ func _ready():
 	lead_note = Note.new(Note.InstrumentEnum.SYNTH, s_per_sub, Note.SoundTypeEnum.SQUARE, fondamental * pow(2.0, note/12.0), randf()*vol_lead)         ## Note de lead
 	bass_note = Note.new(Note.InstrumentEnum.BASS, s_per_sub*(subs_div-1), Note.SoundTypeEnum.BASS, fondamental * pow(2.0, note/12.0)/2, vol_bass)     ## Note de basse
 	
+	baked_kick = _create_kick(drum_kick.duration, drum_kick.volume)
+	baked_snare = _create_snare(drum_snare.duration, drum_snare.volume)
+	baked_hihat = _create_hithat(drum_hihat.duration, drum_hihat.volume)
+	
 	# Start playing the AudioPlayer, and prepare the Buffer Array
 	audio_player.play()
 	playback = audio_player.get_stream_playback()
 	buffer.resize(buffer_size)
 	buffer.fill(0.0)
 
+#TODO: Need doc
+func _create_kick(duration: float, volume: float) -> PackedFloat32Array:
+	var out = lowpass_iir(add_arrays(chirp(duration, 40.0, 10.0, WaveTypeEnum.SAWTOOTH, 1.0), white_noise(duration)), 200.0)
+	var out_bis = lowpass_iir(add_arrays(white_noise(duration), white_noise(duration)), 1000.0)
+	var decay_result = decay(duration, 4.5)
+	
+	for i in range(out.size()):
+		out[i] *= decay_result[i] * volume * out_bis[i]
+	
+	return out
+
+#TODO: Need doc
+func _create_snare(duration: float, volume: float) -> PackedFloat32Array:
+	var out = white_noise(duration)
+	var decay_result = decay(duration, 1.5)
+	
+	for i in range(out.size()):
+		out[i] *= decay_result[i] * volume
+	
+	return out
+
+#TODO: Need doc
+func _create_hithat(duration: float, volume: float) -> PackedFloat32Array:
+	var out = lowpass_iir(white_noise(duration), 10000.0)
+	var decay_result = decay(duration, 16.0)
+	
+	for i in range(out.size()):
+		out[i] *= decay_result[i] * volume
+	
+	return out
 
 ## Quand le node reçoit un message (array de Notes), il génère le son correspondant dans le buffer et envoie certain echantillons du buffer au player.
 func receive_message(message):
@@ -118,7 +165,6 @@ func receive_message(message):
 		else : 
 			print("    ", j+1,"/",total_subs, " | ", note, " semi-tone")
 	
-		
 	if int(float(j) / subs_div) % 2 == 0 and j % subs_div == 0 :
 		sound_to_render[0] = drum_kick
 		bass_groove = randi_range(0, 1)
@@ -126,7 +172,7 @@ func receive_message(message):
 		if !bass_groove :
 			bass_note.frequency = fondamental * pow(2.0, note/12.0)/2
 			sound_to_render[3] = bass_note 
-			
+	
 	elif int(float(j) / subs_div) % 2 == 1 and j % subs_div == 0 :
 		sound_to_render[1] = drum_snare
 
@@ -134,8 +180,8 @@ func receive_message(message):
 			bass_note.frequency = fondamental * pow(2.0, note/12.0)/2
 			sound_to_render[3] = bass_note
 			
-		bass_groove = round(randf_range(0, 3)/3)
-		
+		bass_groove = randi_range(0, 1)
+	
 	elif j% 1 == 0:
 		sound_to_render[2] = drum_hihat
 	
@@ -148,16 +194,16 @@ func receive_message(message):
 		
 		match m.sound_type:
 			Note.SoundTypeEnum.HITHAT:
-				play_hihat(m.duration, m.volume)
+				play_baked_sound(baked_hihat, m.volume)
 			Note.SoundTypeEnum.KICK:
-				play_kick(m.duration, m.volume)
+				play_baked_sound(baked_kick, m.volume)
 			Note.SoundTypeEnum.SNARE:
-				play_snare(m.duration, m.volume)
+				play_baked_sound(baked_snare, m.volume)
 			Note.SoundTypeEnum.SQUARE:
 				play_squarewave(m.duration, m.frequency, m.volume)
 			Note.SoundTypeEnum.BASS:
 				play_bass(m.duration, m.frequency, m.volume)
-				
+	
 	for i in range(fs * s_per_sub+1):
 		playback.push_frame(Vector2.ONE * buffer[i])
 	
@@ -167,11 +213,11 @@ func receive_message(message):
 ## [br]
 ## [br][param arr: Array] Input array to be rotated.
 ## [br][param offset: int] Number of positions to rotate the array to the left
-func rotate_array(arr: Array, offset: int) -> Array:					
+func rotate_array(arr: Array, offset: int) -> PackedFloat32Array:
 	var size = arr.size()
 	if size == 0:
 		return arr.duplicate()
-
+	
 	var result := []
 	result.resize(size)
 	for i in size:
@@ -185,7 +231,7 @@ func rotate_array(arr: Array, offset: int) -> Array:
 ## Generates a WhiteNoise array of given duration (s).
 ## [br]
 ## [br][param duration: float] Duration of the sound (seconds).
-func white_noise(duration: float) -> Array:
+func white_noise(duration: float) -> PackedFloat32Array:
 	var n = int(duration * fs)
 	var out = []
 	out.resize(n)
@@ -197,7 +243,7 @@ func white_noise(duration: float) -> Array:
 ## [br]
 ## [br][param duration: float] Duration of the sound (seconds).
 ## [br][param frequency: float = 440.0] Frequency of the sine wave (Hz).
-func sine_wave(duration: float, frequency: float = 440.0) -> Array:
+func sine_wave(duration: float, frequency: float = 440.0) -> PackedFloat32Array:
 	var n = int(duration * fs)
 	var out = range(n)
 	for i in range(n):
@@ -212,24 +258,25 @@ func sine_wave(duration: float, frequency: float = 440.0) -> Array:
 ## [br][param end_frequency: float = 10.0] Ending frequency (Hz).
 ## [br][param wave: String="sawtooth"] Waveform type between ("sine", "square", "sawtooth").
 ## [br][param volume: float=1.0] Amplitude multiplier (between 0.0 and 1.0).
-func chirp(duration: float, start_frequency : float=50.0, end_frequency: float=10.0, wave: String="sawtooth", volume: float=1.0) -> Array:
+func chirp(duration: float, start_frequency : float = 50.0, end_frequency: float = 10.0, wave: WaveTypeEnum = WaveTypeEnum.SAWTOOTH, volume: float=1.0) -> PackedFloat32Array:
 	var n = int(duration * fs)
 	var out = range(n)
-	if wave == "sine":
-		for i in range(n):
-			var t = float(i) / fs
-			var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
-			out[i] = sin(2.0 * PI * instantaneous_frequency * t) * volume     
-	if wave == "square":
-		for i in range(n):
-			var t = float(i) / fs
-			var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
-			out[i] = sign(sin(2.0 * PI * instantaneous_frequency * t)) * volume  
-	if wave == "sawtooth":
-		for i in range(n):
-			var t = float(i) / fs
-			var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
-			out[i] = 2.0 * (t * instantaneous_frequency - floor(0.5 + t * instantaneous_frequency)) * volume  
+	match wave:
+		WaveTypeEnum.SINE:
+			for i in range(n):
+				var t = float(i) / fs
+				var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
+				out[i] = sin(2.0 * PI * instantaneous_frequency * t) * volume
+		WaveTypeEnum.SQUARE:
+			for i in range(n):
+				var t = float(i) / fs
+				var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
+				out[i] = sign(sin(2.0 * PI * instantaneous_frequency * t)) * volume
+		WaveTypeEnum.SAWTOOTH:
+			for i in range(n):
+				var t = float(i) / fs
+				var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
+				out[i] = 2.0 * (t * instantaneous_frequency - floor(0.5 + t * instantaneous_frequency)) * volume
 	return out
 
 ## Generates an exponential decay envelope going from 1 to 0 of given duration (s) and time constant tau .
@@ -239,7 +286,7 @@ func chirp(duration: float, start_frequency : float=50.0, end_frequency: float=1
 ## [br][param duration: float] Duration of the envelope (seconds).
 ## [br][param tau: float = 1.0] Time constant controlling the decay rate [b](must be tau > 0)[/b].
 ## [br][param revert: bool = false] If true, generates an envelope going from 0 to 1 instead.
-func decay(duration: float, tau: float=1.0, revert: bool=false) -> Array:
+func decay(duration: float, tau: float = 1.0, revert: bool = false) -> PackedFloat32Array:
 	var n = int(duration * fs)
 	var out = range(n)
 	if revert:
@@ -252,9 +299,9 @@ func decay(duration: float, tau: float=1.0, revert: bool=false) -> Array:
 
 ## Adds two numeric arrays element-wise of [b]same size[/b]
 ## [br]
-## [br][param arr1: Array] First input.
-## [br][param arr2: Array] Second input.
-func add_arrays(arr1: Array, arr2: Array) -> Array:
+## [br][param arr1: PackedFloat32Array] First input.
+## [br][param arr2: PackedFloat32Array] Second input.
+func add_arrays(arr1: PackedFloat32Array, arr2: PackedFloat32Array) -> PackedFloat32Array:
 	var result = []
 	for i in range(arr1.size()):
 		result.append(arr1[i] + arr2[i])
@@ -262,9 +309,9 @@ func add_arrays(arr1: Array, arr2: Array) -> Array:
 
 ## Multiplies two numeric arrays element-wise of [b]same size[/b]
 ## [br]
-## [br][param arr1: Array] First input.
-## [br][param arr2: Array] Second input.
-func multiply_array(arr1: Array, arr2: Array) -> Array:
+## [br][param arr1: PackedFloat32Array] First input.
+## [br][param arr2: PackedFloat32Array] Second input.
+func multiply_array(arr1: PackedFloat32Array, arr2: PackedFloat32Array) -> PackedFloat32Array:
 	var result = []
 	for i in range(arr1.size()):
 		result.append(arr1[i] * arr2[i])
@@ -272,9 +319,9 @@ func multiply_array(arr1: Array, arr2: Array) -> Array:
 
 ## Applies a simple one-pole IIR low-pass filter to the input samples.
 ## [br]
-## [br][param samples: Array] Input of samples to be filtered.
+## [br][param samples: PackedFloat32Array] Input of samples to be filtered.
 ## [br][param cutoff_hz: float] Cutoff frequency of the low-pass filter (Hz).
-func lowpass_iir(samples: Array, cutoff_hz: float) -> Array:
+func lowpass_iir(samples: PackedFloat32Array, cutoff_hz: float) -> PackedFloat32Array:
 	"""
 		- rc = 1 / (2π * cutoff_hz)
 		- dt = 1 / Fs
@@ -292,57 +339,14 @@ func lowpass_iir(samples: Array, cutoff_hz: float) -> Array:
 		output.append(last)
 	return output
 
-## Compute hi-hat sound and mix into Buffer
+## Compute baked sound into Buffer
 ## [br]
-## [br][param duration: float] Duration  of the sound (seconds).
+## [br][param sound_data: PackedFloat32Array] Data of the sound.
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func play_hihat(duration: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(white_noise(duration), 10000.0)
-	var decay_result = decay(duration, 16.0)
-
-	if buffer.size() < out.size():
-		for i in range(buffer.size()):
-			out[i] *= decay_result[i] * volume
-			buffer[i] += out[i]
-	else :
-		for i in range(out.size()):
-			out[i] *= decay_result[i] * volume
-			buffer[i] += out[i]
-
-## Compute kick sound and mix into Buffer
-## [br]
-## [br][param duration: float] Duration of the sound (seconds).
-## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func play_kick(duration: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(add_arrays(chirp(duration, 40.0, 10.0, "sawtooth", 1.0), white_noise(duration)), 200.0)
-	var out_bis = lowpass_iir(add_arrays(white_noise(duration), white_noise(duration)), 1000.0)
-	var decay_result = decay(duration, 4.5)
-
-	if buffer.size() < out.size():
-		for i in range(buffer.size()):
-			out[i] *= decay_result[i] * volume * out_bis[i]
-			buffer[i] += out[i]
-	else :
-		for i in range(out.size()):
-			out[i] *= decay_result[i] * volume * out_bis[i]
-			buffer[i] += out[i]
-
-## Compute snare sound and mix into Buffer
-## [br]
-## [br][param duration: float] Duration of the sound (seconds).
-## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func play_snare(duration: float, volume: float = 1.0) -> void:
-	var out = white_noise(duration)
-	var decay_result = decay(duration, 1.5)
-
-	if buffer.size() < out.size():
-		for i in range(buffer.size()):
-			out[i] *= decay_result[i] * volume
-			buffer[i] += out[i]
-	else :
-		for i in range(out.size()):
-			out[i] *= decay_result[i] * volume
-			buffer[i] += out[i]
+func play_baked_sound(sound_data: PackedFloat32Array, volume: float) -> void:
+	var limit = min(buffer.size(), sound_data.size())
+	for i in range(limit):
+		buffer[i] += sound_data[i] * volume
 
 ## Compute squarewave lead sound and mix into Buffer
 ## [br]
@@ -350,8 +354,8 @@ func play_snare(duration: float, volume: float = 1.0) -> void:
 ## [br][param frequency: float] Fundamental frequency (Hz).
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
 func play_squarewave(duration: float, frequency: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(chirp(duration, frequency, frequency, "square", 1.0), 5000.0)
-	var out_bis = lowpass_iir(chirp(duration, 4.05*frequency, 4*frequency, "square", 1.0), 5000.0)
+	var out = lowpass_iir(chirp(duration, frequency, frequency, WaveTypeEnum.SQUARE, 1.0), 5000.0)
+	var out_bis = lowpass_iir(chirp(duration, 4.05*frequency, 4*frequency, WaveTypeEnum.SQUARE, 1.0), 5000.0)
 	var decay_result = decay(duration, 2, false)
 
 	if buffer.size() < out.size():
@@ -369,8 +373,8 @@ func play_squarewave(duration: float, frequency: float, volume: float = 1.0) -> 
 ## [br][param frequency: float] Fundamental frequency (Hz).
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
 func play_bass(duration: float, frequency: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(chirp(duration, frequency, frequency, "sawtooth", 1.0), 5000.0)
-	var out_bis = lowpass_iir(chirp(duration, 1.990*frequency, 2.01*frequency, "square", 1), 5000.0)
+	var out = lowpass_iir(chirp(duration, frequency, frequency, WaveTypeEnum.SAWTOOTH, 1.0), 5000.0)
+	var out_bis = lowpass_iir(chirp(duration, 1.990*frequency, 2.01*frequency, WaveTypeEnum.SQUARE, 1), 5000.0)
 	var decay_result = decay(duration, 1)
 
 	if buffer.size() < out.size():
