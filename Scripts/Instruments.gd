@@ -119,7 +119,7 @@ func receive_message(message):
 			print("    ", j+1,"/",total_subs, " | ", note, " semi-tone")
 	
 		
-	if (int(j / subs_div)) % 2 == 0 and j % subs_div == 0 :	
+	if int(float(j) / subs_div) % 2 == 0 and j % subs_div == 0 :
 		sound_to_render[0] = drum_kick
 		bass_groove = randi_range(0, 1)
 		
@@ -127,7 +127,7 @@ func receive_message(message):
 			bass_note.frequency = fondamental * pow(2.0, note/12.0)/2
 			sound_to_render[3] = bass_note 
 			
-	elif (j / subs_div) % 2 == 1 and j % subs_div == 0 :
+	elif int(float(j) / subs_div) % 2 == 1 and j % subs_div == 0 :
 		sound_to_render[1] = drum_snare
 
 		if bass_groove :
@@ -148,20 +148,20 @@ func receive_message(message):
 		
 		match m.sound_type:
 			Note.SoundTypeEnum.HITHAT:
-				Play_HiHat(m.duration, m.volume)
+				play_hihat(m.duration, m.volume)
 			Note.SoundTypeEnum.KICK:
-				Play_Kick(m.duration, m.volume)
+				play_kick(m.duration, m.volume)
 			Note.SoundTypeEnum.SNARE:
-				Play_Snare(m.duration, m.volume)
+				play_snare(m.duration, m.volume)
 			Note.SoundTypeEnum.SQUARE:
-				Play_SquareWave(m.duration, m.frequency, m.volume)
+				play_squarewave(m.duration, m.frequency, m.volume)
 			Note.SoundTypeEnum.BASS:
-				Play_Bass(m.duration, m.frequency, m.volume)
+				play_bass(m.duration, m.frequency, m.volume)
 				
 	for i in range(fs * s_per_sub+1):
 		playback.push_frame(Vector2.ONE * buffer[i])
 	
-	buffer = rotate_array(buffer, fs * s_per_sub)
+	buffer = rotate_array(buffer, int(fs * s_per_sub))
 
 ## Rotate (shift) to the left an array by a given integer offset, filling out-of-bounds indices with 0.0.
 ## [br]
@@ -185,7 +185,7 @@ func rotate_array(arr: Array, offset: int) -> Array:
 ## Generates a WhiteNoise array of given duration (s).
 ## [br]
 ## [br][param duration: float] Duration of the sound (seconds).
-func WhiteNoise(duration: float) -> Array:
+func white_noise(duration: float) -> Array:
 	var n = int(duration * fs)
 	var out = []
 	out.resize(n)
@@ -197,7 +197,7 @@ func WhiteNoise(duration: float) -> Array:
 ## [br]
 ## [br][param duration: float] Duration of the sound (seconds).
 ## [br][param frequency: float = 440.0] Frequency of the sine wave (Hz).
-func SineWave(duration: float, frequency: float = 440.0) -> Array:
+func sine_wave(duration: float, frequency: float = 440.0) -> Array:
 	var n = int(duration * fs)
 	var out = range(n)
 	for i in range(n):
@@ -212,7 +212,7 @@ func SineWave(duration: float, frequency: float = 440.0) -> Array:
 ## [br][param end_frequency: float = 10.0] Ending frequency (Hz).
 ## [br][param wave: String="sawtooth"] Waveform type between ("sine", "square", "sawtooth").
 ## [br][param volume: float=1.0] Amplitude multiplier (between 0.0 and 1.0).
-func Chirp(duration: float, start_frequency : float=50.0, end_frequency: float=10.0, wave: String="sawtooth", volume: float=1.0) -> Array:
+func chirp(duration: float, start_frequency : float=50.0, end_frequency: float=10.0, wave: String="sawtooth", volume: float=1.0) -> Array:
 	var n = int(duration * fs)
 	var out = range(n)
 	if wave == "sine":
@@ -239,7 +239,7 @@ func Chirp(duration: float, start_frequency : float=50.0, end_frequency: float=1
 ## [br][param duration: float] Duration of the envelope (seconds).
 ## [br][param tau: float = 1.0] Time constant controlling the decay rate [b](must be tau > 0)[/b].
 ## [br][param revert: bool = false] If true, generates an envelope going from 0 to 1 instead.
-func Decay(duration: float, tau: float=1.0, revert: bool=false) -> Array:
+func decay(duration: float, tau: float=1.0, revert: bool=false) -> Array:
 	var n = int(duration * fs)
 	var out = range(n)
 	if revert:
@@ -296,52 +296,52 @@ func lowpass_iir(samples: Array, cutoff_hz: float) -> Array:
 ## [br]
 ## [br][param duration: float] Duration  of the sound (seconds).
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func Play_HiHat(duration: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(WhiteNoise(duration), 10000.0)
-	var decay = Decay(duration, 16.0)
+func play_hihat(duration: float, volume: float = 1.0) -> void:
+	var out = lowpass_iir(white_noise(duration), 10000.0)
+	var decay_result = decay(duration, 16.0)
 
 	if buffer.size() < out.size():
 		for i in range(buffer.size()):
-			out[i] *= decay[i] * volume
+			out[i] *= decay_result[i] * volume
 			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
-			out[i] *= decay[i] * volume
+			out[i] *= decay_result[i] * volume
 			buffer[i] += out[i]
 
 ## Compute kick sound and mix into Buffer
 ## [br]
 ## [br][param duration: float] Duration of the sound (seconds).
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func Play_Kick(duration: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(add_arrays(Chirp(duration, 40.0, 10.0, "sawtooth", 1.0), WhiteNoise(duration)), 200.0)
-	var out_bis = lowpass_iir(add_arrays(WhiteNoise(duration), WhiteNoise(duration)), 1000.0)
-	var decay = Decay(duration, 4.5)
+func play_kick(duration: float, volume: float = 1.0) -> void:
+	var out = lowpass_iir(add_arrays(chirp(duration, 40.0, 10.0, "sawtooth", 1.0), white_noise(duration)), 200.0)
+	var out_bis = lowpass_iir(add_arrays(white_noise(duration), white_noise(duration)), 1000.0)
+	var decay_result = decay(duration, 4.5)
 
 	if buffer.size() < out.size():
 		for i in range(buffer.size()):
-			out[i] *= decay[i] * volume * out_bis[i]
+			out[i] *= decay_result[i] * volume * out_bis[i]
 			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
-			out[i] *= decay[i] * volume * out_bis[i]
+			out[i] *= decay_result[i] * volume * out_bis[i]
 			buffer[i] += out[i]
 
 ## Compute snare sound and mix into Buffer
 ## [br]
 ## [br][param duration: float] Duration of the sound (seconds).
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func Play_Snare(duration: float, volume: float = 1.0) -> void:
-	var out = WhiteNoise(duration)
-	var decay = Decay(duration, 1.5)
+func play_snare(duration: float, volume: float = 1.0) -> void:
+	var out = white_noise(duration)
+	var decay_result = decay(duration, 1.5)
 
 	if buffer.size() < out.size():
 		for i in range(buffer.size()):
-			out[i] *= decay[i] * volume
+			out[i] *= decay_result[i] * volume
 			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
-			out[i] *= decay[i] * volume
+			out[i] *= decay_result[i] * volume
 			buffer[i] += out[i]
 
 ## Compute squarewave lead sound and mix into Buffer
@@ -349,18 +349,18 @@ func Play_Snare(duration: float, volume: float = 1.0) -> void:
 ## [br][param duration: float] Duration of the sound (seconds).
 ## [br][param frequency: float] Fundamental frequency (Hz).
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func Play_SquareWave(duration: float, frequency: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(Chirp(duration, frequency, frequency, "square", 1.0), 5000.0)
-	var out_bis = lowpass_iir(Chirp(duration, 4.05*frequency, 4*frequency, "square", 1.0), 5000.0)
-	var decay = Decay(duration, 2, false)
+func play_squarewave(duration: float, frequency: float, volume: float = 1.0) -> void:
+	var out = lowpass_iir(chirp(duration, frequency, frequency, "square", 1.0), 5000.0)
+	var out_bis = lowpass_iir(chirp(duration, 4.05*frequency, 4*frequency, "square", 1.0), 5000.0)
+	var decay_result = decay(duration, 2, false)
 
 	if buffer.size() < out.size():
 		for i in range(buffer.size()):
-			out[i] *= decay[i] * volume * out_bis[i]
+			out[i] *= decay_result[i] * volume * out_bis[i]
 			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
-			out[i] *= decay[i] * volume * out_bis[i]
+			out[i] *= decay_result[i] * volume * out_bis[i]
 			buffer[i] += out[i]
 
 ## Compute bass sound and mix into Buffer
@@ -368,16 +368,16 @@ func Play_SquareWave(duration: float, frequency: float, volume: float = 1.0) -> 
 ## [br][param duration: float] Duration of the sound (seconds).
 ## [br][param frequency: float] Fundamental frequency (Hz).
 ## [br][param volume: float = 1.0] Amplitude multiplier (between 0.0 and 1.0).
-func Play_Bass(duration: float, frequency: float, volume: float = 1.0) -> void:
-	var out = lowpass_iir(Chirp(duration, frequency, frequency, "sawtooth", 1.0), 5000.0)
-	var out_bis = lowpass_iir(Chirp(duration, 1.990*frequency, 2.01*frequency, "square", 1), 5000.0)
-	var decay = Decay(duration, 1)
+func play_bass(duration: float, frequency: float, volume: float = 1.0) -> void:
+	var out = lowpass_iir(chirp(duration, frequency, frequency, "sawtooth", 1.0), 5000.0)
+	var out_bis = lowpass_iir(chirp(duration, 1.990*frequency, 2.01*frequency, "square", 1), 5000.0)
+	var decay_result = decay(duration, 1)
 
 	if buffer.size() < out.size():
 		for i in range(buffer.size()):
-			out[i] *= decay[i] * volume * out_bis[i]
+			out[i] *= decay_result[i] * volume * out_bis[i]
 			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
-			out[i] *= decay[i] * volume * out_bis[i]
+			out[i] *= decay_result[i] * volume * out_bis[i]
 			buffer[i] += out[i]
