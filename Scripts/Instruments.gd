@@ -204,8 +204,17 @@ func receive_message(message):
 			Note.SoundTypeEnum.BASS:
 				play_bass(m.duration, m.frequency, m.volume)
 	
-	for i in range(fs * s_per_sub+1):
-		playback.push_frame(Vector2.ONE * buffer[i])
+	var frames_to_push = int(fs * s_per_sub)
+	
+	var stereo_data = PackedVector2Array()
+	stereo_data.resize(frames_to_push)
+	
+	for i in range(frames_to_push):
+		var sample = buffer[i]
+		
+		stereo_data[i] = Vector2(sample, sample)
+	
+	playback.push_buffer(stereo_data)
 	
 	buffer = rotate_array(buffer, int(fs * s_per_sub))
 
@@ -213,19 +222,20 @@ func receive_message(message):
 ## [br]
 ## [br][param arr: Array] Input array to be rotated.
 ## [br][param offset: int] Number of positions to rotate the array to the left
-func rotate_array(arr: Array, offset: int) -> PackedFloat32Array:
+func rotate_array(arr: PackedFloat32Array, offset: int) -> PackedFloat32Array:
 	var size = arr.size()
-	if size == 0:
-		return arr.duplicate()
+	if offset >= size:
+		arr.fill(0.0)
+		return arr
 	
-	var result := []
-	result.resize(size)
-	for i in size:
-		var src_index = i + offset
-		if src_index >= 0 and src_index < size:
-			result[i] = arr[src_index]
-		else:
-			result[i] = 0.0
+	var result = arr.slice(offset)
+	
+	var padding = PackedFloat32Array()
+	padding.resize(offset)
+	padding.fill(0.0)
+	
+	result.append_array(padding)
+	
 	return result
 
 ## Generates a WhiteNoise array of given duration (s).
@@ -233,7 +243,7 @@ func rotate_array(arr: Array, offset: int) -> PackedFloat32Array:
 ## [br][param duration: float] Duration of the sound (seconds).
 func white_noise(duration: float) -> PackedFloat32Array:
 	var n = int(duration * fs)
-	var out = []
+	var out = PackedFloat32Array()
 	out.resize(n)
 	for i in range(n):
 		out[i] = randf()
@@ -245,7 +255,8 @@ func white_noise(duration: float) -> PackedFloat32Array:
 ## [br][param frequency: float = 440.0] Frequency of the sine wave (Hz).
 func sine_wave(duration: float, frequency: float = 440.0) -> PackedFloat32Array:
 	var n = int(duration * fs)
-	var out = range(n)
+	var out = PackedFloat32Array()
+	out.resize(n)
 	for i in range(n):
 		out[i] = sin(i * 2.0 * PI * frequency / fs)       
 	return out
@@ -260,7 +271,9 @@ func sine_wave(duration: float, frequency: float = 440.0) -> PackedFloat32Array:
 ## [br][param volume: float=1.0] Amplitude multiplier (between 0.0 and 1.0).
 func chirp(duration: float, start_frequency : float = 50.0, end_frequency: float = 10.0, wave: WaveTypeEnum = WaveTypeEnum.SAWTOOTH, volume: float=1.0) -> PackedFloat32Array:
 	var n = int(duration * fs)
-	var out = range(n)
+	var out = PackedFloat32Array()
+	out.resize(n)
+	
 	match wave:
 		WaveTypeEnum.SINE:
 			for i in range(n):
@@ -288,7 +301,9 @@ func chirp(duration: float, start_frequency : float = 50.0, end_frequency: float
 ## [br][param revert: bool = false] If true, generates an envelope going from 0 to 1 instead.
 func decay(duration: float, tau: float = 1.0, revert: bool = false) -> PackedFloat32Array:
 	var n = int(duration * fs)
-	var out = range(n)
+	var out = PackedFloat32Array()
+	out.resize(n)
+	
 	if revert:
 		for i in range(n):
 			out[n-(i+1)] 	= (1 - (i+1)/float(n))**(tau)
@@ -302,9 +317,11 @@ func decay(duration: float, tau: float = 1.0, revert: bool = false) -> PackedFlo
 ## [br][param arr1: PackedFloat32Array] First input.
 ## [br][param arr2: PackedFloat32Array] Second input.
 func add_arrays(arr1: PackedFloat32Array, arr2: PackedFloat32Array) -> PackedFloat32Array:
-	var result = []
-	for i in range(arr1.size()):
-		result.append(arr1[i] + arr2[i])
+	var size: int = min(arr1.size(), arr2.size())
+	var result = PackedFloat32Array()
+	result.resize(size)
+	for i in range(size):
+		result[i] = arr1[i] + arr2[i]
 	return result
 
 ## Multiplies two numeric arrays element-wise of [b]same size[/b]
@@ -312,7 +329,7 @@ func add_arrays(arr1: PackedFloat32Array, arr2: PackedFloat32Array) -> PackedFlo
 ## [br][param arr1: PackedFloat32Array] First input.
 ## [br][param arr2: PackedFloat32Array] Second input.
 func multiply_array(arr1: PackedFloat32Array, arr2: PackedFloat32Array) -> PackedFloat32Array:
-	var result = []
+	var result = PackedFloat32Array()
 	for i in range(arr1.size()):
 		result.append(arr1[i] * arr2[i])
 	return result
@@ -332,7 +349,7 @@ func lowpass_iir(samples: PackedFloat32Array, cutoff_hz: float) -> PackedFloat32
 	var dt = 1.0 / fs
 	var alpha = dt / (rc + dt)
 	
-	var output = []
+	var output = PackedFloat32Array()
 	var last = samples[0]
 	for s in samples:
 		last = last + alpha * (s - last)
