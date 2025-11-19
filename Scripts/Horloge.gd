@@ -1,4 +1,5 @@
 extends Node
+class_name Clock
 
 # Le node horloge envoie un message aux Instruments toute les "subdivision" (sub_section)
 # Une metrique est définie de base dans l'horloge (mesure, et facon de compter les subdivision, ex: 4*4 ou 3*7, etc...)
@@ -9,7 +10,7 @@ extends Node
 
 @export_group("Fréquence d'échantillonnage")
 ## Fréquence d'échantillonage (48000 Hz par défaut)
-@export var Fs : int = 48000
+@export var fs : int = 48000
 
 ## La métrique est construite de la facon suivante : 1 mesure = measure_length x temps et 1 mesure = subs_div x subdivision
 ## Exemple, pour les valeurs de bases, une mesure contient 4 temps, et chaque temps contient 6 subdivisions, et les subdivisions sont jouée au rythme de 400/min

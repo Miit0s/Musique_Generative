@@ -1,0 +1,26 @@
+[gd_scene load_steps=7 format=3 uid="uid://b3u3uegj57fgl"]
+
+[ext_resource type="Script" uid="uid://dan4e0f8cjo5i" path="res://Scripts/Horloge.gd" id="1_rfu1n"]
+[ext_resource type="Script" uid="uid://cc7byllddml4q" path="res://Scripts/Instruments.gd" id="2_hcm6b"]
+[ext_resource type="Resource" uid="uid://dijafkmwqk75n" path="res://Ressources/Notes/DrumKick.tres" id="3_l7vlk"]
+[ext_resource type="Resource" uid="uid://d2b8wvgepxwum" path="res://Ressources/Notes/DrumSnare.tres" id="4_ly247"]
+[ext_resource type="Resource" uid="uid://bvtp2k3l2ab04" path="res://Ressources/Notes/DrumHithat.tres" id="5_nr04c"]
+
+[sub_resource type="AudioStreamGenerator" id="AudioStreamGenerator_x4av3"]
+
+[node name="MainScene" type="Node2D"]
+
+[node name="Horloge" type="Node" parent="."]
+script = ExtResource("1_rfu1n")
+
+[node name="Instrument" type="Node" parent="Horloge" node_paths=PackedStringArray("clock", "audio_player")]
+script = ExtResource("2_hcm6b")
+clock = NodePath("..")
+audio_player = NodePath("AudioStreamPlayer")
+metric_plot = true
+drum_kick = ExtResource("3_l7vlk")
+drum_snare = ExtResource("4_ly247")
+drum_hihat = ExtResource("5_nr04c")
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="Horloge/Instrument"]
+stream = SubResource("AudioStreamGenerator_x4av3")

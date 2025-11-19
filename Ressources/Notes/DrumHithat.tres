@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="Note" load_steps=2 format=3 uid="uid://bvtp2k3l2ab04"]
+
+[ext_resource type="Script" uid="uid://mbvvlcoe578e" path="res://Scripts/Note.gd" id="1_64620"]
+
+[resource]
+script = ExtResource("1_64620")
+duration = 0.4
+volume = 0.3

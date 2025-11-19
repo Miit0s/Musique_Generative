@@ -1,4 +1,6 @@
-@icon("res://Scripts/musical-note.png")
+@icon("uid://dn4tqx7mbfmob")
+
+extends Resource
 ## Classe contenant les données d'une note musicale.
 ##
 ## [member Instrument (string)] Pour quel instrument est cette note ? (ex : "drum", "synth", etc.)
@@ -16,16 +18,29 @@
 ## [code]var my_note = Note.new("synth", 0.5, 12.0, "sine", 0.8)[/code]
 class_name Note
 
-var Instrument: String          ## [Instrument (string)] Pour quel instrument est cette note ? (ex : "drum", "synth", etc.)     
-var Duration: float             ## [Duration (float)] Durée de la note en secondes.
-var Soundtype: String           ## [Soundtype (string)] Type de son (varie selon l'instrument : "sine", "square", "noise" pour un synthé, "kick", "snare" pour une batterie, etc.).
-var Frequency: float = 440.0    ## [Frequency (float = 440.0)] Fréquence de la note (Hz).      
-var Volume: float = 1.0         ## [Volume (float = 1.0)] Volume de la note (0.0 à 1.0).
+enum InstrumentEnum {
+	DRUM,
+	SYNTH,
+	BASS
+}
 
-func _init(_Instrument: String, _Duration: float, _SoundType: String, _Frequency: float = 440.0, _Volume: float = 1.0):
-	Instrument = _Instrument
-	Duration = _Duration
-	Soundtype = _SoundType
-	Frequency = _Frequency
-	Volume = _Volume
-	
+enum SoundTypeEnum {
+	HITHAT,
+	KICK,
+	SNARE,
+	SQUARE,
+	BASS
+}
+
+@export var instrument: InstrumentEnum = InstrumentEnum.DRUM  ## [Instrument (string)] Pour quel instrument est cette note ? (ex : "drum", "synth", etc.)     
+@export var duration: float = 1                               ## [Duration (float)] Durée de la note en secondes.
+@export var sound_type: SoundTypeEnum = SoundTypeEnum.KICK    ## [Soundtype (string)] Type de son (varie selon l'instrument : "sine", "square", "noise" pour un synthé, "kick", "snare" pour une batterie, etc.).
+@export var frequency: float = 440.0                          ## [Frequency (float = 440.0)] Fréquence de la note (Hz).      
+@export var volume: float = 1.0                               ## [Volume (float = 1.0)] Volume de la note (0.0 à 1.0).
+
+func _init(_instrument: InstrumentEnum = InstrumentEnum.DRUM, _duration: float = 1, _soundType: SoundTypeEnum = SoundTypeEnum.KICK, _frequency: float = 440.0, _volume: float = 1.0):
+	instrument = _instrument
+	duration = _duration
+	sound_type = _soundType
+	frequency = _frequency
+	volume = _volume

@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="Note" load_steps=2 format=3 uid="uid://dijafkmwqk75n"]
+
+[ext_resource type="Script" uid="uid://mbvvlcoe578e" path="res://Scripts/Note.gd" id="1_innt5"]
+
+[resource]
+script = ExtResource("1_innt5")
+duration = 0.4
+sound_type = 1
+volume = 0.8

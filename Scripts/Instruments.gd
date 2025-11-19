@@ -1,19 +1,15 @@
 extends Node
 class_name Instruments
 
-## Preload de la classe Note pour créer des notes musicales
-const MyData = preload("res://Scripts/Note.gd")
-
-@export_group("Lien aux nodes")
-
+@export_group("Node Link")
 ## (Node) Clock Node that send the message every sub_times, and give value like Fs, tempo, etc...
-@export var Clock: Node = get_parent()
+@export var clock: Clock
 ## (Node AudioStreamPlayer) Node qui joue le son généré
-@export var AudioPlayer: AudioStreamPlayer
+@export var audio_player: AudioStreamPlayer
 
 @export_group("Buffer")
 ## Durée du buffer (secondes)
-@export var Buffer_duration: float = 1.0
+@export var buffer_duration: float = 1.0
 
 @export_group("Metrique (-1 is Clock value)")
 ## Temps par mesure (-1 is Clock value)
@@ -25,32 +21,26 @@ const MyData = preload("res://Scripts/Note.gd")
 ## Fréquence fondamentale (-1 is Clock value)
 @export var fondamental : float = -1.0
 
-@export_group("Volumes des instruments")
-## Volume du kick (entre 0.0 et 1.0)
-@export var vol_drum_kick : float = 0.8
-## Volume de la snare (entre 0.0 et 1.0)
-@export var vol_drum_snare : float = 0.4
-## Volume du hihat (entre 0.0 et 1.0)
-@export var vol_drum_hihat : float = 0.3
+@export_group("Instruments Volumes")
 ## Volume du lead (entre 0.0 et 1.0)
-@export var vol_lead : float = 0.3
+@export_range(0, 1) var vol_lead : float = 0.3
 ## Volume de la basse (entre 0.0 et 1.0)
-@export var vol_bass : float = 0.3
+@export_range(0, 1) var vol_bass : float = 0.3
 
 @export_group("Visualisation and Debug")
 ## If true, this will plot every subdiv and note
 @export var metric_plot: bool = false
 
 ## Fréquence d'échantillonage du parent (48000 Hz par défaut)
-@onready var Fs : float = Clock.Fs
+@onready var fs : float = clock.fs
 ## Taille du buffer (1 seconde d'audio)
-@onready var Buffer_size : int = round(Fs * Buffer_duration)
+@onready var buffer_size : int = round(fs * buffer_duration)
 ## Sub div par minute du parent
-@onready var sub_div_pm: float = Clock.sub_div_pm
+@onready var sub_div_pm: float = clock.sub_div_pm
 ## Secondes par subdivision
 @onready var s_per_sub : float = 60.0 / sub_div_pm
 ## Gamme en demi-tons par rapport à la fondamentale (0 = Fondamentale = La) du parent
-@onready var gamme : Array = Clock.gamme
+@onready var gamme : Array = clock.gamme
 
 ## Ratio de fréquence entre deux demi-tons consécutifs
 var semitone_ratio : float = pow(2.0, 1.0 / 12.0)
@@ -58,7 +48,7 @@ var semitone_ratio : float = pow(2.0, 1.0 / 12.0)
 var note: float = 0
 
 ## Buffer circulaire contenant les échantillons audio générés
-var Buffer: Array = []
+var buffer: Array = []
 ## Handle de playback pour envoyer les échantillons audio
 var playback: AudioStreamPlayback
 
@@ -68,61 +58,54 @@ var total_subs : int
 var spb : float
 
 ## [Drum_Kick, Drum_Snare, Drum_HiHat, Bass_Note, Lead_Note] Array contenant le message envoyé aux instruments
-var Sound_To_Render: Array = [null, null, null, null, null]
+var sound_to_render: Array[Note] = [null, null, null, null, null]
 
 ## Booléen pour déterminer si la basse joue sur le temps ou pas
-var Bass_Groove = false
+var bass_groove = false
 
 ## Note de kick
-var Drum_Kick: Note
+@export var drum_kick: Note
 ## Note de snare
-var Drum_Snare: Note
+@export var drum_snare: Note
 ## Note de hihat
-var Drum_HiHat: Note
+@export var drum_hihat: Note
 ## Note de lead
-var Lead_Note: Note
+var lead_note: Note
 ## Note de basse
-var Bass_Note: Note
+var bass_note: Note
 
 ## Indice de la subdivision actuelle normalisé sur la metrique de l'instrument
 var j: int = 0
 
 func _ready():
 	# Stop si l'audio player n'a pas été définie
-	assert(!AudioPlayer == null, "No AudioPlayer defined for this Instrument")
+	assert(!audio_player == null, "No AudioPlayer defined for this Instrument")
 	
 	# Applique la valeur de la clock si param = -1
 	if measure_length == -1:
-		measure_length = Clock.measure_length
+		measure_length = clock.measure_length
 	if subs_div == -1:
-		subs_div = Clock.subs_div	
+		subs_div = clock.subs_div
 	if fondamental == -1:
-		fondamental = Clock.fondamental
+		fondamental = clock.fondamental
 	
 	# Update total_subs value
 	total_subs = measure_length * subs_div
 	
-	
-	Drum_Kick = Note.new("Drum", 0.4, "Kick", 440.0, vol_drum_kick)                                                 ## Note de kick
-	Drum_Snare = Note.new("Drum", 0.15, "Snare", 440.0, vol_drum_snare)                                             ## Note de snare
-	Drum_HiHat = Note.new("Drum", 0.4, "HiHat", 440.0, vol_drum_hihat)                                              ## Note de hihat
-	Lead_Note = Note.new("Synth", s_per_sub, "Square", fondamental * pow(2.0, note/12.0), randf()*vol_lead)         ## Note de lead
-	Bass_Note = Note.new("Bass", s_per_sub*(subs_div-1), "Bass", fondamental * pow(2.0, note/12.0)/2, vol_bass)     ## Note de basse
+	lead_note = Note.new(Note.InstrumentEnum.SYNTH, s_per_sub, Note.SoundTypeEnum.SQUARE, fondamental * pow(2.0, note/12.0), randf()*vol_lead)         ## Note de lead
+	bass_note = Note.new(Note.InstrumentEnum.BASS, s_per_sub*(subs_div-1), Note.SoundTypeEnum.BASS, fondamental * pow(2.0, note/12.0)/2, vol_bass)     ## Note de basse
 	
 	# Start playing the AudioPlayer, and prepare the Buffer Array
-	AudioPlayer.play()
-	playback = AudioPlayer.get_stream_playback()
-	Buffer.resize(Buffer_size)
-	Buffer.fill(0.0)
+	audio_player.play()
+	playback = audio_player.get_stream_playback()
+	buffer.resize(buffer_size)
+	buffer.fill(0.0)
 
 
 ## Quand le node reçoit un message (array de Notes), il génère le son correspondant dans le buffer et envoie certain echantillons du buffer au player.
 func receive_message(message):
-	Sound_To_Render = [null, null, null, null, null]
-	Drum_Kick.Volume = vol_drum_kick
-	Drum_Snare.Volume = vol_drum_snare
-	Drum_HiHat.Volume = vol_drum_hihat
-	Bass_Note.Volume = vol_bass
+	sound_to_render = [null, null, null, null, null]
+	bass_note.volume = vol_bass
 	
 	note = message[1]
 	j = message[0] % total_subs
@@ -137,47 +120,48 @@ func receive_message(message):
 	
 		
 	if (int(j / subs_div)) % 2 == 0 and j % subs_div == 0 :	
-		Sound_To_Render[0] = Drum_Kick
-		Bass_Groove = randi_range(0, 1)
+		sound_to_render[0] = drum_kick
+		bass_groove = randi_range(0, 1)
 		
-		if !Bass_Groove :
-			Bass_Note.Frequency = fondamental * pow(2.0, note/12.0)/2
-			Sound_To_Render[3] = Bass_Note 
+		if !bass_groove :
+			bass_note.frequency = fondamental * pow(2.0, note/12.0)/2
+			sound_to_render[3] = bass_note 
 			
 	elif (j / subs_div) % 2 == 1 and j % subs_div == 0 :
-		Sound_To_Render[1] = Drum_Snare
+		sound_to_render[1] = drum_snare
 
-		if Bass_Groove :
-			Bass_Note.Frequency = fondamental * pow(2.0, note/12.0)/2
-			Sound_To_Render[3] = Bass_Note
+		if bass_groove :
+			bass_note.frequency = fondamental * pow(2.0, note/12.0)/2
+			sound_to_render[3] = bass_note
 			
-		Bass_Groove = round(randf_range(0, 3)/3)
+		bass_groove = round(randf_range(0, 3)/3)
 		
 	elif j% 1 == 0:
-		Sound_To_Render[2] = Drum_HiHat
+		sound_to_render[2] = drum_hihat
 	
-	Lead_Note.Frequency = fondamental * pow(2.0, note/12.0)
-	Lead_Note.Volume = randf()*vol_lead
-	Sound_To_Render[4] = Lead_Note
+	lead_note.frequency = fondamental * pow(2.0, note/12.0)
+	lead_note.volume = randf() * vol_lead
+	sound_to_render[4] = lead_note
 	
-	for m in Sound_To_Render:
-		if m != null:
-			if m.Soundtype == "HiHat":
-				Play_HiHat(m.Duration, m.Volume)
-			elif m.Soundtype == "Kick":
-				Play_Kick(m.Duration, m.Volume)
-			elif m.Soundtype == "Snare":
-				Play_Snare(m.Duration, m.Volume)
-			elif m.Soundtype == "Square":
-				Play_SquareWave(m.Duration, m.Frequency, m.Volume)
-			elif m.Soundtype == "Bass":
-				Play_Bass(m.Duration, m.Frequency, m.Volume)
-			
-			
-	for i in range(Fs*s_per_sub+1):
-		playback.push_frame(Vector2.ONE * Buffer[i])
+	for m: Note in sound_to_render:
+		if m == null: continue
+		
+		match m.sound_type:
+			Note.SoundTypeEnum.HITHAT:
+				Play_HiHat(m.duration, m.volume)
+			Note.SoundTypeEnum.KICK:
+				Play_Kick(m.duration, m.volume)
+			Note.SoundTypeEnum.SNARE:
+				Play_Snare(m.duration, m.volume)
+			Note.SoundTypeEnum.SQUARE:
+				Play_SquareWave(m.duration, m.frequency, m.volume)
+			Note.SoundTypeEnum.BASS:
+				Play_Bass(m.duration, m.frequency, m.volume)
+				
+	for i in range(fs * s_per_sub+1):
+		playback.push_frame(Vector2.ONE * buffer[i])
 	
-	Buffer = rotate_array(Buffer, Fs*s_per_sub)
+	buffer = rotate_array(buffer, fs * s_per_sub)
 
 ## Rotate (shift) to the left an array by a given integer offset, filling out-of-bounds indices with 0.0.
 ## [br]
@@ -202,7 +186,7 @@ func rotate_array(arr: Array, offset: int) -> Array:
 ## [br]
 ## [br][param duration: float] Duration of the sound (seconds).
 func WhiteNoise(duration: float) -> Array:
-	var n = int(duration * Fs)
+	var n = int(duration * fs)
 	var out = []
 	out.resize(n)
 	for i in range(n):
@@ -214,10 +198,10 @@ func WhiteNoise(duration: float) -> Array:
 ## [br][param duration: float] Duration of the sound (seconds).
 ## [br][param frequency: float = 440.0] Frequency of the sine wave (Hz).
 func SineWave(duration: float, frequency: float = 440.0) -> Array:
-	var n = int(duration * Fs)
+	var n = int(duration * fs)
 	var out = range(n)
 	for i in range(n):
-		out[i] = sin(i * 2.0 * PI * frequency / Fs)       
+		out[i] = sin(i * 2.0 * PI * frequency / fs)       
 	return out
 
 ## Generates a linear chirp from start_frequency to end_frequency over the given duration.
@@ -229,21 +213,21 @@ func SineWave(duration: float, frequency: float = 440.0) -> Array:
 ## [br][param wave: String="sawtooth"] Waveform type between ("sine", "square", "sawtooth").
 ## [br][param volume: float=1.0] Amplitude multiplier (between 0.0 and 1.0).
 func Chirp(duration: float, start_frequency : float=50.0, end_frequency: float=10.0, wave: String="sawtooth", volume: float=1.0) -> Array:
-	var n = int(duration * Fs)
+	var n = int(duration * fs)
 	var out = range(n)
 	if wave == "sine":
 		for i in range(n):
-			var t = float(i) / Fs
+			var t = float(i) / fs
 			var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
 			out[i] = sin(2.0 * PI * instantaneous_frequency * t) * volume     
 	if wave == "square":
 		for i in range(n):
-			var t = float(i) / Fs
+			var t = float(i) / fs
 			var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
 			out[i] = sign(sin(2.0 * PI * instantaneous_frequency * t)) * volume  
 	if wave == "sawtooth":
 		for i in range(n):
-			var t = float(i) / Fs
+			var t = float(i) / fs
 			var instantaneous_frequency = start_frequency + (end_frequency - start_frequency) * (t / duration)
 			out[i] = 2.0 * (t * instantaneous_frequency - floor(0.5 + t * instantaneous_frequency)) * volume  
 	return out
@@ -256,7 +240,7 @@ func Chirp(duration: float, start_frequency : float=50.0, end_frequency: float=1
 ## [br][param tau: float = 1.0] Time constant controlling the decay rate [b](must be tau > 0)[/b].
 ## [br][param revert: bool = false] If true, generates an envelope going from 0 to 1 instead.
 func Decay(duration: float, tau: float=1.0, revert: bool=false) -> Array:
-	var n = int(duration * Fs)
+	var n = int(duration * fs)
 	var out = range(n)
 	if revert:
 		for i in range(n):
@@ -298,7 +282,7 @@ func lowpass_iir(samples: Array, cutoff_hz: float) -> Array:
 		- y[n] = y[n-1] + alpha * (x[n] - y[n-1])
 	"""
 	var rc = 1.0 / (2.0 * PI * cutoff_hz)
-	var dt = 1.0 / Fs
+	var dt = 1.0 / fs
 	var alpha = dt / (rc + dt)
 	
 	var output = []
@@ -316,14 +300,14 @@ func Play_HiHat(duration: float, volume: float = 1.0) -> void:
 	var out = lowpass_iir(WhiteNoise(duration), 10000.0)
 	var decay = Decay(duration, 16.0)
 
-	if Buffer.size() < out.size():
-		for i in range(Buffer.size()):
+	if buffer.size() < out.size():
+		for i in range(buffer.size()):
 			out[i] *= decay[i] * volume
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
 			out[i] *= decay[i] * volume
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 
 ## Compute kick sound and mix into Buffer
 ## [br]
@@ -334,14 +318,14 @@ func Play_Kick(duration: float, volume: float = 1.0) -> void:
 	var out_bis = lowpass_iir(add_arrays(WhiteNoise(duration), WhiteNoise(duration)), 1000.0)
 	var decay = Decay(duration, 4.5)
 
-	if Buffer.size() < out.size():
-		for i in range(Buffer.size()):
+	if buffer.size() < out.size():
+		for i in range(buffer.size()):
 			out[i] *= decay[i] * volume * out_bis[i]
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
 			out[i] *= decay[i] * volume * out_bis[i]
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 
 ## Compute snare sound and mix into Buffer
 ## [br]
@@ -351,14 +335,14 @@ func Play_Snare(duration: float, volume: float = 1.0) -> void:
 	var out = WhiteNoise(duration)
 	var decay = Decay(duration, 1.5)
 
-	if Buffer.size() < out.size():
-		for i in range(Buffer.size()):
+	if buffer.size() < out.size():
+		for i in range(buffer.size()):
 			out[i] *= decay[i] * volume
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
 			out[i] *= decay[i] * volume
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 
 ## Compute squarewave lead sound and mix into Buffer
 ## [br]
@@ -370,14 +354,14 @@ func Play_SquareWave(duration: float, frequency: float, volume: float = 1.0) -> 
 	var out_bis = lowpass_iir(Chirp(duration, 4.05*frequency, 4*frequency, "square", 1.0), 5000.0)
 	var decay = Decay(duration, 2, false)
 
-	if Buffer.size() < out.size():
-		for i in range(Buffer.size()):
+	if buffer.size() < out.size():
+		for i in range(buffer.size()):
 			out[i] *= decay[i] * volume * out_bis[i]
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
 			out[i] *= decay[i] * volume * out_bis[i]
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 
 ## Compute bass sound and mix into Buffer
 ## [br]
@@ -389,11 +373,11 @@ func Play_Bass(duration: float, frequency: float, volume: float = 1.0) -> void:
 	var out_bis = lowpass_iir(Chirp(duration, 1.990*frequency, 2.01*frequency, "square", 1), 5000.0)
 	var decay = Decay(duration, 1)
 
-	if Buffer.size() < out.size():
-		for i in range(Buffer.size()):
+	if buffer.size() < out.size():
+		for i in range(buffer.size()):
 			out[i] *= decay[i] * volume * out_bis[i]
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
 	else :
 		for i in range(out.size()):
 			out[i] *= decay[i] * volume * out_bis[i]
-			Buffer[i] += out[i]
+			buffer[i] += out[i]
